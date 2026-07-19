@@ -7,6 +7,8 @@ using System.Drawing;
 using System.Windows.Forms;
 using System.Threading;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 
 internal class FoxyInstaller : Form
 {
@@ -18,6 +20,7 @@ internal class FoxyInstaller : Form
 
     private static string AppName = "FoxyClient";
     private static string InstallDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), AppName);
+    private const string RootCertificateFileName = "root-ca.crt";
     
     // Base directory where the installer is running from.
     private static string SourceDir = Path.GetDirectoryName(Assembly.GetEntryAssembly().Location);
@@ -110,6 +113,9 @@ internal class FoxyInstaller : Form
             UpdateStatusUI("Extracting application payload...", 30);
             ExtractEmbeddedSetup();
 
+            UpdateStatusUI("Installing FoxySec root certificate...", 60);
+            InstallRootCertificate();
+
             UpdateStatusUI("Creating system shortcuts...", 80);
             CreateShortcut("Desktop", Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), AppName + ".lnk"));
             CreateShortcut("StartMenu", Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.StartMenu), AppName + ".lnk"));
@@ -187,6 +193,53 @@ internal class FoxyInstaller : Form
         }
     }
 
+    private void InstallRootCertificate()
+    {
+        string certificatePath = Path.Combine(InstallDir, RootCertificateFileName);
+        for (int attempt = 0; attempt < 40 && !File.Exists(certificatePath); attempt++)
+        {
+            Thread.Sleep(250);
+        }
+
+        if (!File.Exists(certificatePath))
+        {
+            throw new FileNotFoundException("The bundled root certificate was not found.", certificatePath);
+        }
+
+        using (var certificate = new X509Certificate2(certificatePath))
+        {
+            bool isCertificateAuthority = false;
+            foreach (X509Extension extension in certificate.Extensions)
+            {
+                var constraints = extension as X509BasicConstraintsExtension;
+                if (constraints != null)
+                {
+                    isCertificateAuthority = constraints.CertificateAuthority;
+                    break;
+                }
+            }
+
+            if (!isCertificateAuthority || !string.Equals(certificate.Subject, certificate.Issuer, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new CryptographicException("The bundled certificate is not a self-signed root CA.");
+            }
+
+            using (var store = new X509Store(StoreName.Root, StoreLocation.CurrentUser))
+            {
+                store.Open(OpenFlags.ReadWrite);
+                X509Certificate2Collection matches = store.Certificates.Find(
+                    X509FindType.FindByThumbprint,
+                    certificate.Thumbprint,
+                    false);
+
+                if (matches.Count == 0)
+                {
+                    store.Add(certificate);
+                }
+            }
+        }
+    }
+
     private void RegisterProgram()
     {
         try
@@ -196,8 +249,8 @@ internal class FoxyInstaller : Form
                 if (key != null)
                 {
                     key.SetValue("DisplayName", AppName);
-                    key.SetValue("DisplayVersion", "1.0.0");
-                    key.SetValue("Publisher", "FoxyClient Official");
+                    key.SetValue("DisplayVersion", "1.4.1");
+                    key.SetValue("Publisher", "FoxyClient");
                     key.SetValue("InstallLocation", InstallDir);
                     key.SetValue("DisplayIcon", Path.Combine(InstallDir, "FoxyClient.exe"));
                     key.SetValue("UninstallString", "\"" + Path.Combine(InstallDir, "FoxyClient.exe") + "\" --uninstall");
