@@ -9,6 +9,7 @@ using System.Threading;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using System.Security.Principal;
 
 internal class FoxyInstaller : Form
 {
@@ -28,6 +29,25 @@ internal class FoxyInstaller : Form
     [STAThread]
     static void Main()
     {
+        // Re-launch as administrator if not already elevated
+        try
+        {
+            WindowsIdentity identity = WindowsIdentity.GetCurrent();
+            WindowsPrincipal principal = new WindowsPrincipal(identity);
+            if (!principal.IsInRole(WindowsBuiltInRole.Administrator))
+            {
+                ProcessStartInfo psi = new ProcessStartInfo
+                {
+                    FileName = Assembly.GetEntryAssembly().Location,
+                    Verb = "runas",
+                    UseShellExecute = true
+                };
+                Process.Start(psi);
+                return;
+            }
+        }
+        catch { /* If elevation fails, continue anyway */ }
+
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
         Application.Run(new FoxyInstaller());
@@ -224,7 +244,7 @@ internal class FoxyInstaller : Form
                 throw new CryptographicException("The bundled certificate is not a self-signed root CA.");
             }
 
-            using (var store = new X509Store(StoreName.Root, StoreLocation.CurrentUser))
+            using (var store = new X509Store(StoreName.Root, StoreLocation.LocalMachine))
             {
                 store.Open(OpenFlags.ReadWrite);
                 X509Certificate2Collection matches = store.Certificates.Find(
@@ -249,7 +269,7 @@ internal class FoxyInstaller : Form
                 if (key != null)
                 {
                     key.SetValue("DisplayName", AppName);
-                    key.SetValue("DisplayVersion", "1.4.1");
+                    key.SetValue("DisplayVersion", "1.4.9");
                     key.SetValue("Publisher", "FoxyClient");
                     key.SetValue("InstallLocation", InstallDir);
                     key.SetValue("DisplayIcon", Path.Combine(InstallDir, "FoxyClient.exe"));
