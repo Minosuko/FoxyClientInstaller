@@ -269,7 +269,7 @@ internal class FoxyInstaller : Form
                 if (key != null)
                 {
                     key.SetValue("DisplayName", AppName);
-                    key.SetValue("DisplayVersion", "1.4.9");
+                    key.SetValue("DisplayVersion", "1.4.16");
                     key.SetValue("Publisher", "FoxyClient");
                     key.SetValue("InstallLocation", InstallDir);
                     key.SetValue("DisplayIcon", Path.Combine(InstallDir, "FoxyClient.exe"));
